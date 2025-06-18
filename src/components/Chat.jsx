@@ -2,8 +2,11 @@ import { useEffect, useState, useContext, useRef } from "react";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
+import.meta.env.VITE_API_BASE_URL
 
-const socket = io("http://localhost:5000");
+
+const socket = io(import.meta.env.VITE_API_BASE_URL);
+
 
 const Chat = () => {
   const { user, username, logout } = useContext(AuthContext);
