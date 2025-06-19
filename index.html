@@ -260,20 +260,24 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ username, password }),
                     });
+
+                    // Always try to parse JSON, then check response.ok
                     const data = await response.json();
+
                     if (response.ok) {
                         localStorage.setItem('token', data.token);
                         setToken(data.token);
                         setIsLoggedIn(true);
                         setCurrentView('chat');
                         setIsGuest(false);
-                        // Emit event to backend when user logs in successfully
                         socketRef.current.emit('userConnected', username);
                     } else {
-                        displayError(languages[language].errorLogin);
+                        // Use backend's error message if available, otherwise a generic one
+                        displayError(data.msg || languages[language].errorLogin);
                     }
                 } catch (error) {
                     console.error('Login error:', error);
+                    // This catch block handles network errors or JSON parsing errors
                     displayError(languages[language].errorLogin);
                 }
             };
@@ -286,14 +290,20 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ username, password }),
                     });
+
+                    // Always try to parse JSON, then check response.ok
+                    const data = await response.json();
+
                     if (response.ok) {
                         displayModal(languages[language].registrationSuccess, languages[language].pleaseLogin);
                         setCurrentView('login');
                     } else {
-                        displayError(languages[language].errorRegister);
+                        // Use backend's error message if available, otherwise a generic one
+                        displayError(data.msg || languages[language].errorRegister);
                     }
                 } catch (error) {
                     console.error('Registration error:', error);
+                    // This catch block handles network errors or JSON parsing errors
                     displayError(languages[language].errorRegister);
                 }
             };
@@ -309,8 +319,7 @@
 
             // Handle user logout
             const handleLogout = () => {
-                // Emit event to backend when user logs out
-                if (socketRef.current && (username === 'Guest' || username)) { // Send username if known
+                if (socketRef.current && (username === 'Guest' || username)) {
                      socketRef.current.emit('userDisconnected', isGuest ? 'Guest' : username);
                 }
                 localStorage.removeItem('token');
@@ -321,8 +330,6 @@
                 setMessages([]);
                 setCurrentView('login');
                 setIsGuest(false);
-                // No need to disconnect socket here, as the useEffect cleanup will handle it
-                // when isLoggedIn becomes false and currentView changes to 'login'.
             };
 
             // Handle guest login
@@ -331,11 +338,10 @@
                 setUsername('Guest');
                 setIsLoggedIn(true);
                 setCurrentView('chat');
-                // Emit event to backend when guest connects
                 socketRef.current.emit('userConnected', 'Guest');
             };
 
-            // Render the Login/Register page (remains largely the same)
+            // Render the Login/Register page
             const renderLoginPage = () => (
                 <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
                     <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
