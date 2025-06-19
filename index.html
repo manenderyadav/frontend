@@ -118,6 +118,7 @@
                 registrationSuccess: 'Registration successful!',
                 pleaseLogin: 'Please log in.',
                 ok: 'OK',
+                activeUsers: 'Active Users',
             },
             es: {
                 login: 'Iniciar Sesión',
@@ -136,6 +137,7 @@
                 registrationSuccess: '¡Registro exitoso!',
                 pleaseLogin: 'Por favor, inicia sesión.',
                 ok: 'Aceptar',
+                activeUsers: 'Usuarios Activos',
             },
             fr: {
                 login: 'Se connecter',
@@ -154,6 +156,7 @@
                 registrationSuccess: 'Inscription réussie!',
                 pleaseLogin: 'Veuillez vous connecter.',
                 ok: 'OK',
+                activeUsers: 'Utilisateurs Actifs',
             },
         };
 
@@ -187,6 +190,7 @@
             const [showModal, setShowModal] = useState(false); // State for custom modal
             const [modalMessage, setModalMessage] = useState('');
             const [modalTitle, setModalTitle] = useState('');
+            const [activeUsers, setActiveUsers] = useState([]); // New state for active users
 
             const socketRef = useRef(null);
             const messagesEndRef = useRef(null);
@@ -206,17 +210,28 @@
                   socketRef.current.on('chatMessage', (msg) => {
                       setMessages((prevMessages) => [...prevMessages, msg]);
                   });
+
+                  // Listen for active users list updates
+                  socketRef.current.on('activeUsersList', (users) => {
+                      setActiveUsers(users);
+                  });
                 }
 
 
                 // Clean up socket on component unmount
                 return () => {
                     if (socketRef.current) {
+                        // When component unmounts (e.g., page refresh or close),
+                        // inform the server that the user is disconnecting.
+                        // This helps keep the active user list accurate.
+                        if (username) { // Only send if a username is set
+                            socketRef.current.emit('userDisconnected', username);
+                        }
                         socketRef.current.disconnect();
                         socketRef.current = null; // Clear the ref
                     }
                 };
-            }, [token]);
+            }, [token, username]); // Added username to dependencies to re-run on username change for clean disconnect
 
             // Effect to scroll to the bottom of the messages container whenever messages update
             useEffect(() => {
@@ -252,6 +267,8 @@
                         setIsLoggedIn(true);
                         setCurrentView('chat');
                         setIsGuest(false);
+                        // Emit event to backend when user logs in successfully
+                        socketRef.current.emit('userConnected', username);
                     } else {
                         displayError(languages[language].errorLogin);
                     }
@@ -292,6 +309,10 @@
 
             // Handle user logout
             const handleLogout = () => {
+                // Emit event to backend when user logs out
+                if (socketRef.current && (username === 'Guest' || username)) { // Send username if known
+                     socketRef.current.emit('userDisconnected', isGuest ? 'Guest' : username);
+                }
                 localStorage.removeItem('token');
                 setToken('');
                 setIsLoggedIn(false);
@@ -300,10 +321,8 @@
                 setMessages([]);
                 setCurrentView('login');
                 setIsGuest(false);
-                if (socketRef.current) {
-                    socketRef.current.disconnect();
-                    socketRef.current = null; // Clear the ref
-                }
+                // No need to disconnect socket here, as the useEffect cleanup will handle it
+                // when isLoggedIn becomes false and currentView changes to 'login'.
             };
 
             // Handle guest login
@@ -312,9 +331,11 @@
                 setUsername('Guest');
                 setIsLoggedIn(true);
                 setCurrentView('chat');
+                // Emit event to backend when guest connects
+                socketRef.current.emit('userConnected', 'Guest');
             };
 
-            // Render the Login/Register page
+            // Render the Login/Register page (remains largely the same)
             const renderLoginPage = () => (
                 <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
                     <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
@@ -427,92 +448,115 @@
 
             // Render the Chat page
             const renderChatPage = () => (
-                <div className="flex flex-col h-screen bg-gray-50 font-inter">
-                    {/* Chat Header */}
-                    <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-4 shadow-md flex justify-between items-center rounded-b-xl">
-                        <h1 className="text-2xl font-bold">{languages[language].welcome}</h1>
-                        <div className="flex items-center space-x-4">
-                            {/* Language Selector */}
-                            <div className="relative">
-                                <select
-                                    value={language}
-                                    onChange={(e) => setLanguage(e.target.value)}
-                                    className="block appearance-none bg-blue-700 border border-blue-800 text-white py-2 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:bg-blue-800 focus:border-blue-900 transition duration-200 cursor-pointer"
-                                >
-                                    <option value="en">English</option>
-                                    <option value="es">Español</option>
-                                    <option value="fr">Français</option>
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
-                                    <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                        <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                                    </svg>
+                <div className="flex h-screen bg-gray-50 font-inter">
+                    {/* Active Users Sidebar */}
+                    <div className="w-1/4 bg-gray-200 p-4 shadow-md rounded-tr-xl flex flex-col overflow-hidden">
+                        <h2 className="text-xl font-bold mb-4 text-gray-800">{languages[language].activeUsers}</h2>
+                        <ul className="flex-1 overflow-y-auto space-y-2 pr-2 scroll-container">
+                            {activeUsers.length > 0 ? (
+                                activeUsers.map((user, index) => (
+                                    <li key={index} className="flex items-center text-gray-700 font-medium">
+                                        <span className="relative flex h-3 w-3 mr-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                                        </span>
+                                        {user}
+                                    </li>
+                                ))
+                            ) : (
+                                <li className="text-gray-500 italic">No active users.</li>
+                            )}
+                        </ul>
+                    </div>
+
+                    {/* Main Chat Area */}
+                    <div className="flex-1 flex flex-col">
+                        {/* Chat Header */}
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-4 shadow-md flex justify-between items-center rounded-b-xl">
+                            <h1 className="text-2xl font-bold">{languages[language].welcome}</h1>
+                            <div className="flex items-center space-x-4">
+                                {/* Language Selector */}
+                                <div className="relative">
+                                    <select
+                                        value={language}
+                                        onChange={(e) => setLanguage(e.target.value)}
+                                        className="block appearance-none bg-blue-700 border border-blue-800 text-white py-2 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:bg-blue-800 focus:border-blue-900 transition duration-200 cursor-pointer"
+                                    >
+                                        <option value="en">English</option>
+                                        <option value="es">Español</option>
+                                        <option value="fr">Français</option>
+                                    </select>
+                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
+                                        <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                                        </svg>
+                                    </div>
                                 </div>
+                                {/* Logout Button */}
+                                <button
+                                    onClick={handleLogout}
+                                    className="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-300 shadow-md"
+                                >
+                                    {languages[language].logout}
+                                </button>
                             </div>
-                            {/* Logout Button */}
+                        </div>
+
+                        {/* Guest Message */}
+                        {isGuest && (
+                            <div className="bg-yellow-100 text-yellow-800 p-3 text-center text-sm font-medium rounded-md mx-4 mt-2 shadow-sm">
+                                {languages[language].guestMessage}
+                            </div>
+                        )}
+
+                        {/* Chat Messages Area */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 scroll-container">
+                            {messages.map((msg, index) => (
+                                <div
+                                    key={index}
+                                    className={`flex ${msg.sender === username || (isGuest && msg.sender === 'Guest') ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    <div
+                                        className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-xl shadow-sm ${
+                                            msg.sender === username || (isGuest && msg.sender === 'Guest')
+                                                ? 'bg-blue-500 text-white rounded-br-none'
+                                                : 'bg-gray-200 text-gray-800 rounded-bl-none'
+                                        }`}
+                                    >
+                                        <div className="font-semibold text-sm mb-1">
+                                            {msg.sender === username || (isGuest && msg.sender === 'Guest') ? 'You' : msg.sender}
+                                        </div>
+                                        <p className="text-base break-words">{msg.message}</p>
+                                    </div>
+                                </div>
+                            ))}
+                            <div ref={messagesEndRef} />
+                        </div>
+
+                        {/* Message Input and Send Button */}
+                        <div className="p-4 bg-white border-t border-gray-200 shadow-lg flex items-center space-x-3 rounded-t-xl">
+                            <input
+                                type="text"
+                                className="flex-1 px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 text-gray-800 placeholder-gray-400"
+                                placeholder={languages[language].messagePlaceholder}
+                                value={messageInput}
+                                onChange={(e) => setMessageInput(e.target.value)}
+                                onKeyPress={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleSendMessage();
+                                    }
+                                }}
+                            />
                             <button
-                                onClick={handleLogout}
-                                className="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-300 shadow-md"
+                                onClick={handleSendMessage}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition duration-300 flex items-center justify-center"
                             >
-                                {languages[language].logout}
+                                <svg className="w-5 h-5 mr-2 -ml-1" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
+                                </svg>
+                                {languages[language].send}
                             </button>
                         </div>
-                    </div>
-
-                    {/* Guest Message */}
-                    {isGuest && (
-                        <div className="bg-yellow-100 text-yellow-800 p-3 text-center text-sm font-medium rounded-md mx-4 mt-2 shadow-sm">
-                            {languages[language].guestMessage}
-                        </div>
-                    )}
-
-                    {/* Chat Messages Area */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 scroll-container">
-                        {messages.map((msg, index) => (
-                            <div
-                                key={index}
-                                className={`flex ${msg.sender === username || (isGuest && msg.sender === 'Guest') ? 'justify-end' : 'justify-start'}`}
-                            >
-                                <div
-                                    className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-xl shadow-sm ${
-                                        msg.sender === username || (isGuest && msg.sender === 'Guest')
-                                            ? 'bg-blue-500 text-white rounded-br-none'
-                                            : 'bg-gray-200 text-gray-800 rounded-bl-none'
-                                    }`}
-                                >
-                                    <div className="font-semibold text-sm mb-1">
-                                        {msg.sender === username || (isGuest && msg.sender === 'Guest') ? 'You' : msg.sender}
-                                    </div>
-                                    <p className="text-base break-words">{msg.message}</p>
-                                </div>
-                            </div>
-                        ))}
-                        <div ref={messagesEndRef} />
-                    </div>
-
-                    {/* Message Input and Send Button */}
-                    <div className="p-4 bg-white border-t border-gray-200 shadow-lg flex items-center space-x-3 rounded-t-xl">
-                        <input
-                            type="text"
-                            className="flex-1 px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 text-gray-800 placeholder-gray-400"
-                            placeholder={languages[language].messagePlaceholder}
-                            value={messageInput}
-                            onChange={(e) => setMessageInput(e.target.value)}
-                            onKeyPress={(e) => {
-                                if (e.key === 'Enter') {
-                                    handleSendMessage();
-                                }
-                            }}
-                        />
-                        <button
-                            onClick={handleSendMessage}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition duration-300 flex items-center justify-center"
-                        >
-                            <svg className="w-5 h-5 mr-2 -ml-1" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
-                            </svg>
-                            {languages[language].send}
-                        </button>
                     </div>
                 </div>
             );
