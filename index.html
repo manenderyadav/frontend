@@ -1,589 +1,430 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Lingual Chat</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts: Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- React and ReactDOM CDNs -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel Standalone CDN for JSX transformation -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Socket.IO Client CDN -->
-    <script src="https://unpkg.com/socket.io-client@4/dist/socket.io.min.js"></script>
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-        #root {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        /* Custom Scrollbar for better aesthetics */
-        .scroll-container::-webkit-scrollbar {
-            width: 8px;
-        }
-        .scroll-container::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-        .scroll-container::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 10px;
-        }
-        .scroll-container::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
+import React, { useState, useEffect, useRef } from 'react';
+import io from 'socket.io-client';
 
-        /* Custom Modal Styling */
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-            text-align: center;
-            max-width: 400px;
-            width: 90%;
-        }
-        .modal-content h3 {
-            font-size: 1.5rem;
-            font-weight: bold;
-            margin-bottom: 20px;
-            color: #333;
-        }
-        .modal-content button {
-            background-color: #2563EB;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-        }
-        .modal-content button:hover {
-            background-color: #1D4ED8;
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
+// Define the base URL for your backend API
+const API_URL = 'https://backend-u93p.onrender.com';
+// Define the base URL for your socket.io server
+const SOCKET_URL = 'https://backend-u93p.onrender.com';
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        const io = window.io; // Access io from the global window object
+// Language options for the chat application
+const languages = {
+  en: {
+    login: 'Login',
+    register: 'Register',
+    username: 'Username',
+    password: 'Password',
+    welcome: 'Welcome to the Chat!',
+    messagePlaceholder: 'Type your message...',
+    send: 'Send',
+    logout: 'Logout',
+    errorLogin: 'Login failed. Please check your credentials.',
+    errorRegister: 'Registration failed. Username might be taken.',
+    selectLanguage: 'Select Language:',
+    guestLogin: 'Continue as Guest',
+    guestMessage: 'You are logged in as a Guest. Your messages will be anonymous.',
+  },
+  es: {
+    login: 'Iniciar Sesión',
+    register: 'Registrarse',
+    username: 'Nombre de usuario',
+    password: 'Contraseña',
+    welcome: '¡Bienvenido al Chat!',
+    messagePlaceholder: 'Escribe tu mensaje...',
+    send: 'Enviar',
+    logout: 'Cerrar Sesión',
+    errorLogin: 'Inicio de sesión fallido. Por favor, verifica tus credenciales.',
+    errorRegister: 'Registro fallido. El nombre de usuario podría estar en uso.',
+    selectLanguage: 'Seleccionar idioma:',
+    guestLogin: 'Continuar como Invitado',
+    guestMessage: 'Has iniciado sesión como invitado. Tus mensajes serán anónimos.',
+  },
+  fr: {
+    login: 'Se connecter',
+    register: 'S\'inscrire',
+    username: 'Nom d\'utilisateur',
+    password: 'Mot de passe',
+    welcome: 'Bienvenue sur le chat!',
+    messagePlaceholder: 'Tapez votre message...',
+    send: 'Envoyer',
+    logout: 'Se déconnecter',
+    errorLogin: 'Échec de la connexion. Veuillez vérifier vos identifiants.',
+    errorRegister: 'Échec de l\'inscription. Le nom d\'utilisateur est peut-être déjà pris.',
+    selectLanguage: 'Sélectionnez la langue:',
+    guestLogin: 'Continuer en tant qu\'invité',
+    guestMessage: 'Vous êtes connecté en tant qu\'invité. Vos messages seront anonymes.',
+  },
+};
 
-        // Define the base URL for your backend API
-        const API_URL = 'https://backend-u93p.onrender.com';
-        // Define the base URL for your socket.io server
-        const SOCKET_URL = 'https://backend-u93p.onrender.com';
+// Main App component
+function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false); // State to manage login status
+  const [username, setUsername] = useState(''); // State to store the username
+  const [password, setPassword] = useState(''); // State to store the password
+  const [messages, setMessages] = useState([]); // State to store chat messages
+  const [messageInput, setMessageInput] = useState(''); // State for the message input field
+  const [token, setToken] = useState(localStorage.getItem('token') || ''); // State for authentication token
+  const [currentView, setCurrentView] = useState('login'); // 'login' or 'chat'
+  const [language, setLanguage] = useState('en'); // Default language is English
+  const [showError, setShowError] = useState(false); // State to control error message visibility
+  const [errorMessage, setErrorMessage] = useState(''); // State to store the error message
+  const [isGuest, setIsGuest] = useState(false); // State to check if the user is a guest
 
-        // Language options for the chat application
-        const languages = {
-            en: {
-                login: 'Login',
-                register: 'Register',
-                username: 'Username',
-                password: 'Password',
-                welcome: 'Welcome to the Chat!',
-                messagePlaceholder: 'Type your message...',
-                send: 'Send',
-                logout: 'Logout',
-                errorLogin: 'Login failed. Please check your credentials.',
-                errorRegister: 'Registration failed. Username might be taken.',
-                selectLanguage: 'Select Language:',
-                guestLogin: 'Continue as Guest',
-                guestMessage: 'You are logged in as a Guest. Your messages will be anonymous.',
-                registrationSuccess: 'Registration successful!',
-                pleaseLogin: 'Please log in.',
-                ok: 'OK',
-                activeUsers: 'Active Users',
-            },
-            es: {
-                login: 'Iniciar Sesión',
-                register: 'Registrarse',
-                username: 'Nombre de usuario',
-                password: 'Contraseña',
-                welcome: '¡Bienvenido al Chat!',
-                messagePlaceholder: 'Escribe tu mensaje...',
-                send: 'Enviar',
-                logout: 'Cerrar Sesión',
-                errorLogin: 'Inicio de sesión fallido. Por favor, verifica tus credenciales.',
-                errorRegister: 'Registro fallido. El nombre de usuario podría estar en uso.',
-                selectLanguage: 'Seleccionar idioma:',
-                guestLogin: 'Continuar como Invitado',
-                guestMessage: 'Has iniciado sesión como invitado. Tus mensajes serán anónimos.',
-                registrationSuccess: '¡Registro exitoso!',
-                pleaseLogin: 'Por favor, inicia sesión.',
-                ok: 'Aceptar',
-                activeUsers: 'Usuarios Activos',
-            },
-            fr: {
-                login: 'Se connecter',
-                register: 'S\'inscrire',
-                username: 'Nom d\'utilisateur',
-                password: 'Mot de passe',
-                welcome: 'Bienvenue sur le chat!',
-                messagePlaceholder: 'Tapez votre message...',
-                send: 'Envoyer',
-                logout: 'Se déconnecter',
-                errorLogin: 'Échec de la connexion. Veuillez vérifier vos identifiants.',
-                errorRegister: 'Échec de l\'inscription. Le nom d\'utilisateur est peut-être déjà pris.',
-                selectLanguage: 'Sélectionnez la langue:',
-                guestLogin: 'Continuer en tant qu\'invité',
-                guestMessage: 'Vous êtes connecté en tant qu\'invité. Vos messages seront anonymes.',
-                registrationSuccess: 'Inscription réussie!',
-                pleaseLogin: 'Veuillez vous connecter.',
-                ok: 'OK',
-                activeUsers: 'Utilisateurs Actifs',
-            },
-        };
+  const socketRef = useRef(null); // Ref to hold the socket.io instance
+  const messagesEndRef = useRef(null); // Ref for scrolling to the latest message
 
-        // Custom Modal Component
-        const CustomModal = ({ message, onClose, title, language }) => {
-            if (!message) return null;
-            return (
-                <div className="modal">
-                    <div className="modal-content">
-                        <h3>{title}</h3>
-                        <p className="mb-4">{message}</p>
-                        <button onClick={onClose}>{languages[language].ok}</button>
-                    </div>
-                </div>
-            );
-        };
+  // Effect to handle automatic login if token exists and initialize socket
+  useEffect(() => {
+    if (token) {
+      setIsLoggedIn(true);
+      setCurrentView('chat');
+    }
+    // Initialize socket connection
+    socketRef.current = io(SOCKET_URL);
 
-        // Main App component
-        function App() {
-            const [isLoggedIn, setIsLoggedIn] = useState(false);
-            const [username, setUsername] = useState('');
-            const [password, setPassword] = useState('');
-            const [messages, setMessages] = useState([]);
-            const [messageInput, setMessageInput] = useState('');
-            const [token, setToken] = useState(localStorage.getItem('token') || '');
-            const [currentView, setCurrentView] = useState('login');
-            const [language, setLanguage] = useState('en');
-            const [showError, setShowError] = useState(false);
-            const [errorMessage, setErrorMessage] = useState('');
-            const [isGuest, setIsGuest] = useState(false);
-            const [showModal, setShowModal] = useState(false); // State for custom modal
-            const [modalMessage, setModalMessage] = useState('');
-            const [modalTitle, setModalTitle] = useState('');
-            const [activeUsers, setActiveUsers] = useState([]); // New state for active users
+    // Listen for incoming chat messages
+    socketRef.current.on('chatMessage', (msg) => {
+      setMessages((prevMessages) => [...prevMessages, msg]);
+    });
 
-            const socketRef = useRef(null);
-            const messagesEndRef = useRef(null);
+    // Clean up socket on component unmount
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, [token]);
 
-            // Effect to handle automatic login if token exists and initialize socket
-            useEffect(() => {
-                if (token) {
-                    setIsLoggedIn(true);
-                    setCurrentView('chat');
-                }
-                // Initialize socket connection
-                // Check if socketRef.current is already set to prevent re-initialization
-                if (!socketRef.current) {
-                  socketRef.current = io(SOCKET_URL);
+  // Effect to scroll to the bottom of the messages container whenever messages update
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-                  // Listen for incoming chat messages
-                  socketRef.current.on('chatMessage', (msg) => {
-                      setMessages((prevMessages) => [...prevMessages, msg]);
-                  });
+  // Function to show error messages
+  const displayError = (msg) => {
+    setErrorMessage(msg);
+    setShowError(true);
+    setTimeout(() => setShowError(false), 3000); // Hide error after 3 seconds
+  };
 
-                  // Listen for active users list updates
-                  socketRef.current.on('activeUsersList', (users) => {
-                      setActiveUsers(users);
-                  });
-                }
+  // Handle user login
+  const handleLogin = async () => {
+    try {
+      const response = await fetch(`${API_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        localStorage.setItem('token', data.token);
+        setToken(data.token);
+        setIsLoggedIn(true);
+        setCurrentView('chat');
+        setIsGuest(false); // Ensure guest status is false on successful login
+      } else {
+        displayError(languages[language].errorLogin);
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      displayError(languages[language].errorLogin);
+    }
+  };
 
+  // Handle user registration
+  const handleRegister = async () => {
+    try {
+      const response = await fetch(`${API_URL}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (response.ok) {
+        alert('Registration successful! Please log in.'); // Use a custom modal instead of alert in production
+        setCurrentView('login'); // Switch to login view after successful registration
+      } else {
+        displayError(languages[language].errorRegister);
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      displayError(languages[language].errorRegister);
+    }
+  };
 
-                // Clean up socket on component unmount
-                return () => {
-                    if (socketRef.current) {
-                        // When component unmounts (e.g., page refresh or close),
-                        // inform the server that the user is disconnecting.
-                        // This helps keep the active user list accurate.
-                        if (username) { // Only send if a username is set
-                            socketRef.current.emit('userDisconnected', username);
-                        }
-                        socketRef.current.disconnect();
-                        socketRef.current = null; // Clear the ref
-                    }
-                };
-            }, [token, username]); // Added username to dependencies to re-run on username change for clean disconnect
+  // Handle sending a chat message
+  const handleSendMessage = () => {
+    if (messageInput.trim()) {
+      const senderName = isGuest ? 'Guest' : username;
+      socketRef.current.emit('chatMessage', { sender: senderName, message: messageInput });
+      setMessageInput('');
+    }
+  };
 
-            // Effect to scroll to the bottom of the messages container whenever messages update
-            useEffect(() => {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }, [messages]);
+  // Handle user logout
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setToken('');
+    setIsLoggedIn(false);
+    setUsername('');
+    setPassword('');
+    setMessages([]);
+    setCurrentView('login');
+    setIsGuest(false); // Reset guest status on logout
+    if (socketRef.current) {
+      socketRef.current.disconnect(); // Disconnect socket on logout
+    }
+  };
 
-            // Function to show error messages
-            const displayError = (msg) => {
-                setErrorMessage(msg);
-                setShowError(true);
-                setTimeout(() => setShowError(false), 3000);
-            };
+  // Handle guest login
+  const handleGuestLogin = () => {
+    setIsGuest(true);
+    setUsername('Guest'); // Set a default username for guests
+    setIsLoggedIn(true);
+    setCurrentView('chat');
+  };
 
-            // Function to show custom modal
-            const displayModal = (title, message) => {
-                setModalTitle(title);
-                setModalMessage(message);
-                setShowModal(true);
-            };
+  // Render the Login/Register page
+  const renderLoginPage = () => (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
+        <h2 className="text-3xl font-bold mb-6 text-center text-gray-800">
+          {currentView === 'login' ? languages[language].login : languages[language].register}
+        </h2>
 
-            // Handle user login
-            const handleLogin = async () => {
-                try {
-                    const response = await fetch(`${API_URL}/login`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, password }),
-                    });
+        {/* Language Selection Dropdown */}
+        <div className="mb-6">
+          <label htmlFor="language-select" className="block text-gray-700 text-sm font-semibold mb-2">
+            {languages[language].selectLanguage}
+          </label>
+          <div className="relative">
+            <select
+              id="language-select"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="block appearance-none w-full bg-white border border-gray-300 text-gray-700 py-3 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+            >
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+              </svg>
+            </div>
+          </div>
+        </div>
 
-                    // Always try to parse JSON, then check response.ok
-                    const data = await response.json();
+        {/* Username Input */}
+        <div className="mb-4">
+          <label htmlFor="username" className="block text-gray-700 text-sm font-semibold mb-2">
+            {languages[language].username}
+          </label>
+          <input
+            type="text"
+            id="username"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </div>
 
-                    if (response.ok) {
-                        localStorage.setItem('token', data.token);
-                        setToken(data.token);
-                        setIsLoggedIn(true);
-                        setCurrentView('chat');
-                        setIsGuest(false);
-                        socketRef.current.emit('userConnected', username);
-                    } else {
-                        // Use backend's error message if available, otherwise a generic one
-                        displayError(data.msg || languages[language].errorLogin);
-                    }
-                } catch (error) {
-                    console.error('Login error:', error);
-                    // This catch block handles network errors or JSON parsing errors
-                    displayError(languages[language].errorLogin);
-                }
-            };
+        {/* Password Input */}
+        <div className="mb-6">
+          <label htmlFor="password" className="block text-gray-700 text-sm font-semibold mb-2">
+            {languages[language].password}
+          </label>
+          <input
+            type="password"
+            id="password"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
 
-            // Handle user registration
-            const handleRegister = async () => {
-                try {
-                    const response = await fetch(`${API_URL}/register`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, password }),
-                    });
+        {/* Action Buttons */}
+        <div className="flex flex-col space-y-4">
+          {currentView === 'login' ? (
+            <>
+              <button
+                onClick={handleLogin}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-300 font-bold shadow-md"
+              >
+                {languages[language].login}
+              </button>
+              <button
+                onClick={() => setCurrentView('register')}
+                className="w-full bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 transition duration-300 font-bold shadow-md"
+              >
+                {languages[language].register}
+              </button>
+              <button
+                onClick={handleGuestLogin}
+                className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 transition duration-300 font-bold shadow-md"
+              >
+                {languages[language].guestLogin}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={handleRegister}
+                className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition duration-300 font-bold shadow-md"
+              >
+                {languages[language].register}
+              </button>
+              <button
+                onClick={() => setCurrentView('login')}
+                className="w-full bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 transition duration-300 font-bold shadow-md"
+              >
+                {languages[language].login}
+              </button>
+            </>
+          )}
+        </div>
 
-                    // Always try to parse JSON, then check response.ok
-                    const data = await response.json();
+        {/* Error Message Display */}
+        {showError && (
+          <div className="mt-6 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-center">
+            {errorMessage}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
-                    if (response.ok) {
-                        displayModal(languages[language].registrationSuccess, languages[language].pleaseLogin);
-                        setCurrentView('login');
-                    } else {
-                        // Use backend's error message if available, otherwise a generic one
-                        displayError(data.msg || languages[language].errorRegister);
-                    }
-                } catch (error) {
-                    console.error('Registration error:', error);
-                    // This catch block handles network errors or JSON parsing errors
-                    displayError(languages[language].errorRegister);
-                }
-            };
+  // Render the Chat page
+  const renderChatPage = () => (
+    <div className="flex flex-col h-screen bg-gray-50 font-inter">
+      {/* Chat Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-4 shadow-md flex justify-between items-center rounded-b-xl">
+        <h1 className="text-2xl font-bold">{languages[language].welcome}</h1>
+        <div className="flex items-center space-x-4">
+          {/* Language Selector */}
+          <div className="relative">
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="block appearance-none bg-blue-700 border border-blue-800 text-white py-2 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:bg-blue-800 focus:border-blue-900 transition duration-200 cursor-pointer"
+            >
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
+              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+              </svg>
+            </div>
+          </div>
+          {/* Logout Button */}
+          <button
+            onClick={handleLogout}
+            className="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-300 shadow-md"
+          >
+            {languages[language].logout}
+          </button>
+        </div>
+      </div>
 
-            // Handle sending a chat message
-            const handleSendMessage = () => {
-                if (messageInput.trim()) {
-                    const senderName = isGuest ? 'Guest' : username;
-                    socketRef.current.emit('chatMessage', { sender: senderName, message: messageInput });
-                    setMessageInput('');
-                }
-            };
+      {/* Guest Message */}
+      {isGuest && (
+        <div className="bg-yellow-100 text-yellow-800 p-3 text-center text-sm font-medium rounded-md mx-4 mt-2 shadow-sm">
+          {languages[language].guestMessage}
+        </div>
+      )}
 
-            // Handle user logout
-            const handleLogout = () => {
-                if (socketRef.current && (username === 'Guest' || username)) {
-                     socketRef.current.emit('userDisconnected', isGuest ? 'Guest' : username);
-                }
-                localStorage.removeItem('token');
-                setToken('');
-                setIsLoggedIn(false);
-                setUsername('');
-                setPassword('');
-                setMessages([]);
-                setCurrentView('login');
-                setIsGuest(false);
-            };
+      {/* Chat Messages Area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+        {messages.map((msg, index) => (
+          <div
+            key={index}
+            className={`flex ${msg.sender === username || (isGuest && msg.sender === 'Guest') ? 'justify-end' : 'justify-start'}`}
+          >
+            <div
+              className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-xl shadow-sm ${
+                msg.sender === username || (isGuest && msg.sender === 'Guest')
+                  ? 'bg-blue-500 text-white rounded-br-none'
+                  : 'bg-gray-200 text-gray-800 rounded-bl-none'
+              }`}
+            >
+              <div className="font-semibold text-sm mb-1">
+                {msg.sender === username || (isGuest && msg.sender === 'Guest') ? 'You' : msg.sender}
+              </div>
+              <p className="text-base break-words">{msg.message}</p>
+            </div>
+          </div>
+        ))}
+        <div ref={messagesEndRef} /> {/* Dummy div for scrolling */}
+      </div>
 
-            // Handle guest login
-            const handleGuestLogin = () => {
-                setIsGuest(true);
-                setUsername('Guest');
-                setIsLoggedIn(true);
-                setCurrentView('chat');
-                socketRef.current.emit('userConnected', 'Guest');
-            };
+      {/* Message Input and Send Button */}
+      <div className="p-4 bg-white border-t border-gray-200 shadow-lg flex items-center space-x-3 rounded-t-xl">
+        <input
+          type="text"
+          className="flex-1 px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 text-gray-800 placeholder-gray-400"
+          placeholder={languages[language].messagePlaceholder}
+          value={messageInput}
+          onChange={(e) => setMessageInput(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') {
+              handleSendMessage();
+            }
+          }}
+        />
+        <button
+          onClick={handleSendMessage}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition duration-300 flex items-center justify-center"
+        >
+          <svg className="w-5 h-5 mr-2 -ml-1" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
+          </svg>
+          {languages[language].send}
+        </button>
+      </div>
+    </div>
+  );
 
-            // Render the Login/Register page
-            const renderLoginPage = () => (
-                <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-                    <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
-                        <h2 className="text-3xl font-bold mb-6 text-center text-gray-800">
-                            {currentView === 'login' ? languages[language].login : languages[language].register}
-                        </h2>
+  return (
+    <>
+      <head>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+          {`
+            body {
+              font-family: 'Inter', sans-serif;
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            #root {
+              min-height: 100vh;
+              display: flex;
+              flex-direction: column;
+            }
+            .scroll-container::-webkit-scrollbar {
+              width: 8px;
+            }
+            .scroll-container::-webkit-scrollbar-track {
+              background: #f1f1f1;
+              border-radius: 10px;
+            }
+            .scroll-container::-webkit-scrollbar-thumb {
+              background: #888;
+              border-radius: 10px;
+            }
+            .scroll-container::-webkit-scrollbar-thumb:hover {
+              background: #555;
+            }
+          `}
+        </style>
+      </head>
+      <div id="root">
+        {isLoggedIn ? renderChatPage() : renderLoginPage()}
+      </div>
+    </>
+  );
+}
 
-                        {/* Language Selection Dropdown */}
-                        <div className="mb-6">
-                            <label htmlFor="language-select" className="block text-gray-700 text-sm font-semibold mb-2">
-                                {languages[language].selectLanguage}
-                            </label>
-                            <div className="relative">
-                                <select
-                                    id="language-select"
-                                    value={language}
-                                    onChange={(e) => setLanguage(e.target.value)}
-                                    className="block appearance-none w-full bg-white border border-gray-300 text-gray-700 py-3 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
-                                >
-                                    <option value="en">English</option>
-                                    <option value="es">Español</option>
-                                    <option value="fr">Français</option>
-                                </select>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                    <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                        <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                                    </svg>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Username Input */}
-                        <div className="mb-4">
-                            <label htmlFor="username" className="block text-gray-700 text-sm font-semibold mb-2">
-                                {languages[language].username}
-                            </label>
-                            <input
-                                type="text"
-                                id="username"
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Password Input */}
-                        <div className="mb-6">
-                            <label htmlFor="password" className="block text-gray-700 text-sm font-semibold mb-2">
-                                {languages[language].password}
-                            </label>
-                            <input
-                                type="password"
-                                id="password"
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex flex-col space-y-4">
-                            {currentView === 'login' ? (
-                                <>
-                                    <button
-                                        onClick={handleLogin}
-                                        className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-300 font-bold shadow-md"
-                                    >
-                                        {languages[language].login}
-                                    </button>
-                                    <button
-                                        onClick={() => setCurrentView('register')}
-                                        className="w-full bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 transition duration-300 font-bold shadow-md"
-                                    >
-                                        {languages[language].register}
-                                    </button>
-                                    <button
-                                        onClick={handleGuestLogin}
-                                        className="w-full bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 transition duration-300 font-bold shadow-md"
-                                    >
-                                        {languages[language].guestLogin}
-                                    </button>
-                                </>
-                            ) : (
-                                <>
-                                    <button
-                                        onClick={handleRegister}
-                                        className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition duration-300 font-bold shadow-md"
-                                    >
-                                        {languages[language].register}
-                                    </button>
-                                    <button
-                                        onClick={() => setCurrentView('login')}
-                                        className="w-full bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 transition duration-300 font-bold shadow-md"
-                                    >
-                                        {languages[language].login}
-                                    </button>
-                                </>
-                            )}
-                        </div>
-
-                        {/* Error Message Display */}
-                        {showError && (
-                            <div className="mt-6 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-center">
-                                {errorMessage}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-
-            // Render the Chat page
-            const renderChatPage = () => (
-                <div className="flex h-screen bg-gray-50 font-inter">
-                    {/* Active Users Sidebar */}
-                    <div className="w-1/4 bg-gray-200 p-4 shadow-md rounded-tr-xl flex flex-col overflow-hidden">
-                        <h2 className="text-xl font-bold mb-4 text-gray-800">{languages[language].activeUsers}</h2>
-                        <ul className="flex-1 overflow-y-auto space-y-2 pr-2 scroll-container">
-                            {activeUsers.length > 0 ? (
-                                activeUsers.map((user, index) => (
-                                    <li key={index} className="flex items-center text-gray-700 font-medium">
-                                        <span className="relative flex h-3 w-3 mr-2">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                                        </span>
-                                        {user}
-                                    </li>
-                                ))
-                            ) : (
-                                <li className="text-gray-500 italic">No active users.</li>
-                            )}
-                        </ul>
-                    </div>
-
-                    {/* Main Chat Area */}
-                    <div className="flex-1 flex flex-col">
-                        {/* Chat Header */}
-                        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-4 shadow-md flex justify-between items-center rounded-b-xl">
-                            <h1 className="text-2xl font-bold">{languages[language].welcome}</h1>
-                            <div className="flex items-center space-x-4">
-                                {/* Language Selector */}
-                                <div className="relative">
-                                    <select
-                                        value={language}
-                                        onChange={(e) => setLanguage(e.target.value)}
-                                        className="block appearance-none bg-blue-700 border border-blue-800 text-white py-2 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:bg-blue-800 focus:border-blue-900 transition duration-200 cursor-pointer"
-                                    >
-                                        <option value="en">English</option>
-                                        <option value="es">Español</option>
-                                        <option value="fr">Français</option>
-                                    </select>
-                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
-                                        <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                {/* Logout Button */}
-                                <button
-                                    onClick={handleLogout}
-                                    className="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-300 shadow-md"
-                                >
-                                    {languages[language].logout}
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Guest Message */}
-                        {isGuest && (
-                            <div className="bg-yellow-100 text-yellow-800 p-3 text-center text-sm font-medium rounded-md mx-4 mt-2 shadow-sm">
-                                {languages[language].guestMessage}
-                            </div>
-                        )}
-
-                        {/* Chat Messages Area */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 scroll-container">
-                            {messages.map((msg, index) => (
-                                <div
-                                    key={index}
-                                    className={`flex ${msg.sender === username || (isGuest && msg.sender === 'Guest') ? 'justify-end' : 'justify-start'}`}
-                                >
-                                    <div
-                                        className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-xl shadow-sm ${
-                                            msg.sender === username || (isGuest && msg.sender === 'Guest')
-                                                ? 'bg-blue-500 text-white rounded-br-none'
-                                                : 'bg-gray-200 text-gray-800 rounded-bl-none'
-                                        }`}
-                                    >
-                                        <div className="font-semibold text-sm mb-1">
-                                            {msg.sender === username || (isGuest && msg.sender === 'Guest') ? 'You' : msg.sender}
-                                        </div>
-                                        <p className="text-base break-words">{msg.message}</p>
-                                    </div>
-                                </div>
-                            ))}
-                            <div ref={messagesEndRef} />
-                        </div>
-
-                        {/* Message Input and Send Button */}
-                        <div className="p-4 bg-white border-t border-gray-200 shadow-lg flex items-center space-x-3 rounded-t-xl">
-                            <input
-                                type="text"
-                                className="flex-1 px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 text-gray-800 placeholder-gray-400"
-                                placeholder={languages[language].messagePlaceholder}
-                                value={messageInput}
-                                onChange={(e) => setMessageInput(e.target.value)}
-                                onKeyPress={(e) => {
-                                    if (e.key === 'Enter') {
-                                        handleSendMessage();
-                                    }
-                                }}
-                            />
-                            <button
-                                onClick={handleSendMessage}
-                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition duration-300 flex items-center justify-center"
-                            >
-                                <svg className="w-5 h-5 mr-2 -ml-1" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
-                                </svg>
-                                {languages[language].send}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-
-            return (
-                <>
-                    {isLoggedIn ? renderChatPage() : renderLoginPage()}
-                    {showModal && (
-                        <CustomModal
-                            title={modalTitle}
-                            message={modalMessage}
-                            onClose={() => setShowModal(false)}
-                            language={language}
-                        />
-                    )}
-                </>
-            );
-        }
-
-        // Render the App component into the root div
-        ReactDOM.render(<App />, document.getElementById('root'));
-    </script>
-</body>
-</html>
+export default App;
